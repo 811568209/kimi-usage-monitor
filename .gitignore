@@ -1,0 +1,9 @@
+# Local usage history, reports, process state, and private path overrides.
+/data/
+/reports/
+/config.local.json
+node_modules/
+.idea/
+*.sqlite
+*.sqlite-*
+*.tmp
