@@ -7,8 +7,9 @@ async function startFixture(){
   const tempRoot=fs.realpathSync(os.tmpdir()),dir=fs.mkdtempSync(path.join(tempRoot,'kimi-browser-test-')),root=path.resolve(__dirname,'..');
   fs.mkdirSync(dir+'/lib');fs.mkdirSync(dir+'/data');
   for(const file of ['monitor.cjs','dashboard.html'])fs.copyFileSync(path.join(root,file),path.join(dir,file));
-  const html=fs.readFileSync(dir+'/dashboard.html','utf8');fs.writeFileSync(dir+'/dashboard.html',html.replace('<main>','<main><div class="note warning">合成数据功能验证：以下数值仅用于测试，不代表真实账号。</div>'));
-  for(const file of ['collector.cjs','metrics.cjs','work-quota.cjs','monthly-capacity.cjs','history.cjs','database.cjs','conversations.cjs'])fs.copyFileSync(path.join(root,'lib',file),path.join(dir,'lib',file));
+  fs.cpSync(path.join(root,'public'),path.join(dir,'public'),{recursive:true});
+  const html=fs.readFileSync(dir+'/dashboard.html','utf8');fs.writeFileSync(dir+'/dashboard.html',html.replace('<html lang="zh-CN">','<html lang="zh-CN" data-synthetic="true">'));
+  for(const file of ['collector.cjs','metrics.cjs','work-quota.cjs','monthly-capacity.cjs','history.cjs','database.cjs','conversations.cjs','activity.cjs'])fs.copyFileSync(path.join(root,'lib',file),path.join(dir,'lib',file));
   const now=Date.now(),start=now-15*60000,account=M.id('SYNTHETIC_UI_USER');
   const points=Array.from({length:13},(_,i)=>({id:'fixture-quota-'+i,source:'kimi-membership-api',kind:'month',time:start+i*60000,used:.1+i*.001,account,plan:'TEST_PLAN',resetAt:'2027-01-01T00:00:00.000Z',quantum:.0001}));
   points.push({...points.at(-1),id:'fixture-stable',time:now-60000});

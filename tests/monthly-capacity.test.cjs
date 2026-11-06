@@ -39,18 +39,20 @@ test('迟到 token 重算同一条观察，重复刷新和重复快照不会重�
   const a=run(events,q),b=run(events,[q[0],...q]);assert.equal(a.latest.id,missing.latest.id);
   assert.deepEqual(a.overall,b.overall);assert.equal(b.overall.calls,1);
 });
-test('不足精度的消耗、零 token、无调用和跨起点请求不给完整推算',()=>{
+test('严格结算保留门槛，小额和跨起点数据可低可信度回退',()=>{
   assert.equal(run([event(.5)],[snap(0,.2),snap(1,.2001)]).latest.status,'pending');
   for(const [rows,reason] of [[[],/没有对应/],[[event(.5,0)],/总量为零/],[[event(.5,10000,{requestedAt:T-1})],/跨越/]]){
-    const r=run(rows,[snap(0,.2),snap(1,.201)]);assert.equal(r.latest.status,'excluded');assert.match(r.latest.reason,reason);assert.equal(r.overall.monthlyTokens,null);
+    const r=run(rows,[snap(0,.2),snap(1,.201)]);assert.equal(r.latest.status,'excluded');assert.match(r.latest.reason,reason);assert.equal(r.strictGroups[0].monthlyTokens,null);
+    if(rows[0]?.total>0){assert(r.overall.monthlyTokens>0);assert(r.overall.confidence.percent<=15);}
   }
 });
-test('缓存读取或写入未知保留下限，不能变成零或混进综合',()=>{
+test('缓存原始 NULL 和严格结算不变，全量回退可用同构成记录补估',()=>{
   for(const key of ['cacheRead','cacheWrite']) {
     const r=run([event(.5,10000,{[key]:null,total:null}),event(1.5)],[snap(0,.2),snap(1,.201),snap(2,.202)]);
     const invalid=r.observations[1];assert.equal(invalid.status,'excluded');assert.equal(invalid.total,null);
     assert.equal(invalid.composition.find(c=>c.key===key).share,null);assert.equal(invalid.composition.find(c=>c.key===key).unknownCalls,1);
-    assert.equal(r.overall.calls,1);near(r.overall.monthlyTokens,10000000);assert.equal(r.coverage.excludedWindows,1);
+    assert.equal(r.strictGroups[0].calls,1);assert.equal(r.overall.calls,2);near(r.overall.monthlyTokens,10000000);assert.equal(r.coverage.excludedWindows,1);
+    assert.equal(r.overall.status,'provisional');assert.equal(r.overall.qualitySelection.tier,'all');assert(r.overall.confidence.percent<=35);
   }
 });
 test('账号、套餐、周期变化与余额恢复各自分段，不跨边界相加',()=>{
@@ -93,20 +95,21 @@ test('混合产品模型和大时间间隔降低置信度，构成保留实际�
   assert.equal(r.latest.contexts.length,2);assert.equal(r.latest.calls,2);assert(r.overall.confidence.score<=50);
   const long=run([event(.5)],[snap(0,.2),snap(500,.201)]);assert.match(long.overall.confidence.reasons.join('；'),/6 小时/);
 });
-test('触顶、异常跳变及超前时间均不参与估计',()=>{
+test('触顶和异常跳变仅作极低可信度回退，超前读数仍不能参与',()=>{
   for(const q of [[snap(0,.999),snap(1,1)],[snap(0,.1),snap(1,.5)],[snap(0,.2),snap(2000,.201)]]){
-    const r=run([event(.5)],q);assert.equal(r.latest.status,'excluded');assert.equal(r.overall.monthlyTokens,null);
+    const r=run([event(.5)],q);assert.equal(r.latest.status,'excluded');assert.equal(r.strictGroups[0].monthlyTokens,null);
+    if(q[1].time<=NOW){assert(r.overall.monthlyTokens>0);assert.equal(r.overall.confidence.percent,1);}else assert.equal(r.overall.monthlyTokens,null);
   }
 });
 test('起始边界不重复计数，末端包含，待结算尾部不误计入综合',()=>{
   const r=run([event(0),event(1),event(1.5)],[snap(0,.2),snap(1,.201),snap(2,.201)]);
   assert.equal(r.overall.calls,1);assert.equal(r.coverage.pendingCalls,1);assert.equal(r.coverage.localCalls,3);
 });
-test('所选时间按内部首末读数完整计算，避免中间跨界请求被逐段丢弃',()=>{
+test('所选时间同样按可信度优先筛选，跨界低可信度记录保持可追溯',()=>{
   const events=[event(.5),event(1.5,10000,{requestedAt:T+30000})],q=[snap(0,.2),snap(1,.201),snap(2,.202)];
-  const auto=run(events,q);assert.equal(auto.overall.calls,1);
+  const auto=run(events,q);assert.equal(auto.strictGroups[0].calls,1);assert.equal(auto.overall.calls,2);
   const selected=monthlyCapacity(events,q,[],NOW,{from:T,to:T+120000,exclusiveAttested:true});
-  assert.equal(selected.overall.calls,2);near(selected.overall.monthlyTokens,10000000);assert.equal(selected.overall.observations,1);assert.equal(selected.latest.isolated,true);
+  assert.equal(selected.overall.calls,1);near(selected.overall.monthlyTokens,10000000);assert.equal(selected.overall.observations,1);assert.equal(selected.latest.isolated,true);assert.equal(selected.overall.qualitySelection.tier,'medium');assert.equal(selected.overall.qualitySelection.excludedWindows,1);
   assert.equal(selected.selection.exclusiveAttested,true);
 });
 test('时间段不外推未覆盖边缘，不混合多个周期，未确认时保持保守评分',()=>{

@@ -9,12 +9,18 @@ test('全自动采集到推算与历史明细的真实 HTTP 端到端流程',asy
   const post=(url,data={})=>fetch(f.base+url,{method:'POST',headers:{'Content-Type':'application/json','x-monitor-token':nonce},body:JSON.stringify(data)});
   const near=(a,b)=>assert(Math.abs(a-b)<b*1e-8);
   let initial;
+  await t.test('React 系统入口与本地静态依赖完整，禁止任意文件读取和外部脚本',async()=>{
+    const index=await fetch(f.base+'/'),html=await index.text();assert.match(html,/id="root"/);assert.match(html,/\/assets\/app.js/);assert.match(index.headers.get('content-security-policy'),/script-src 'self';/);
+    for(const [name,mime] of [['app.js','text/javascript'],['app.css','text/css']]){const response=await fetch(f.base+'/assets/'+name);assert.equal(response.status,200);assert(response.headers.get('content-type').startsWith(mime));assert((await response.text()).length>1000);}
+    for(const name of ['monitor.cjs','config.json','../data/events.jsonl'])assert.equal((await fetch(f.base+'/assets/'+name)).status,404);
+  });
   await t.test('无需手动样本，全部历史自动生成单区间和综合额度',async()=>{
     initial=await get();assert.equal(initial.schemaVersion,5);assert.equal(initial.samples.length,0);
     assert.equal(initial.monthlyCapacity.overall.observations,12);near(initial.monthlyCapacity.overall.monthlyTokens,10000000);
     assert.equal(initial.monthlyCapacity.overall.calls,12);assert(initial.monthlyCapacity.overall.confidence.score<=60);
     assert.equal(initial.monthlyCapacity.latest.status,'pending');assert.equal(initial.monthlyCapacity.latestEstimate.calls,1);
     assert.equal(initial.monthlyCapacity.modelEstimates[0].thinking,'high');near(initial.monthlyCapacity.modelEstimates[0].monthlyTokens,10000000);
+    assert.equal(initial.activity.all.summary.calls,12);assert.equal(initial.activity.code.summary.knownTokens,120000);assert.equal(initial.activity.work.summary.calls,0);assert.equal(initial.activity.all.heatmap.days.length,371);
   });
   await t.test('采集新调用和额度后自动重算，不依赖开始/结束采样',async()=>{
     await wait(10);const time=Date.now();
@@ -30,6 +36,7 @@ test('全自动采集到推算与历史明细的真实 HTTP 端到端流程',asy
     for(const field of ['monthlyTokens','confidenceScore','inputOtherShare','cacheReadMonthlyTokens','cacheWriteShare','outputMonthlyTokens'])assert(csv.includes(field));
     assert(csv.includes('estimated'));assert(csv.includes('pending'));assert.equal(csv.trim().split('\n').length,r.monthlyCapacity.observations.length+1);
     const models=await fetch(f.base+'/export/models.csv');assert.equal(models.status,200);const modelCsv=await models.text();assert.match(modelCsv,/rawModel,thinking,band/);assert.match(modelCsv,/K3.1 Pro/);assert.match(modelCsv,/"high"/);
+    assert.match(csv,/confidencePercent/);const activityCsv=await fetch(f.base+'/export/activity.csv');assert.equal(activityCsv.status,200);assert.match(await activityCsv.text(),/date,source,calls/);
   });
   await t.test('查询失败保留最后真实额度，推算不伪造新记录',async()=>{
     const before=await get();f.setState({used:.8,fail:true});await post('/api/refresh');const r=await get();assert.equal(r.status.workQuota.ok,false);
@@ -41,7 +48,8 @@ test('全自动采集到推算与历史明细的真实 HTTP 端到端流程',asy
     assert.equal((await fetch(f.base+'/api/events?source=work').then(r=>r.json())).total,0);
     const r=await get(),from=r.coverage.first,to=r.coverage.last;
     assert.equal((await fetch(f.base+`/api/events?from=${from}&to=${to}`).then(r=>r.json())).total,13);
-    for(const query of ['size=101','page=0','source=unknown','from=2&to=1'])assert.equal((await fetch(f.base+'/api/events?'+query)).status,400);
+    const defaults=await fetch(f.base+'/api/events').then(r=>r.json());assert.equal(defaults.size,10);assert.equal(defaults.records.length,10);
+    for(const query of ['size=4','size=101','page=0','source=unknown','from=2&to=1'])assert.equal((await fetch(f.base+'/api/events?'+query)).status,400);
   });
   await t.test('自选时间段真实接口返回覆盖时间、构成与用户隔离确认',async()=>{
     const first=initial.monthlyCapacity.overall.start,last=initial.monthlyCapacity.overall.end;
@@ -79,6 +87,6 @@ test('全自动采集到推算与历史明细的真实 HTTP 端到端流程',asy
     f.setState({used:.114,now:time});fs.appendFileSync(f.wire,JSON.stringify({type:'usage.record',time,model:'kimi-code/k3.1-pro',usage:{inputOther:10,inputCacheRead:20,inputCacheCreation:0,output:5}})+'\n');
     await wait(5500);const saved=JSON.parse(fs.readFileSync(f.dir+'/reports/report.json'));assert.equal(saved.settings.updateIntervalSeconds,5);assert.equal(saved.settings.quotaPollSeconds,30);assert.equal(saved.coverage.records,before.coverage.records+1);assert(saved.generatedAt>before.generatedAt);
     assert(saved.monthlyCapacity.coverage.pendingCalls>=1);
-    const db=new DatabaseSync(f.dir+'/data/usage.sqlite',{readOnly:true});try{assert.equal(db.prepare('SELECT COUNT(*) n FROM usage_events').get().n,saved.coverage.records);assert(db.prepare("SELECT COUNT(*) n FROM collection_runs WHERE trigger='automatic'").get().n>=1);assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check,'ok');}finally{db.close();}
+    const db=new DatabaseSync(f.dir+'/data/usage.sqlite',{readOnly:true});try{assert.equal(db.prepare('SELECT COUNT(*) n FROM usage_events').get().n,saved.coverage.records);assert(db.prepare("SELECT COUNT(*) n FROM collection_runs WHERE trigger='automatic'").get().n>=1);assert(db.prepare('SELECT COUNT(*) n FROM activity_metrics').get().n>0);assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check,'ok');}finally{db.close();}
   });
 });

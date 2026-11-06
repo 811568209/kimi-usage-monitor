@@ -4,10 +4,10 @@ const {usageHistory,rangeParams}=require('../lib/history.cjs');
 const params=o=>new URLSearchParams(o);
 const events=Array.from({length:60},(_,i)=>({id:String(i),time:1000+i,source:i%2?'code':'work',model:i%3?'K3.1':'K2.8',thinking:'high',agent:'main'}));
 test('完整历史按时间倒序分页，每页限制与越界页码正常',()=>{
-  const first=usageHistory(events,params({}));assert.equal(first.total,60);assert.equal(first.pages,3);assert.equal(first.records[0].time,1059);
-  const last=usageHistory(events,params({page:100}));assert.equal(last.page,3);assert.equal(last.records.length,10);
+  const first=usageHistory(events,params({}));assert.equal(first.total,60);assert.equal(first.pages,6);assert.equal(first.size,10);assert.equal(first.records.length,10);assert.equal(first.records[0].time,1059);
+  const last=usageHistory(events,params({page:100}));assert.equal(last.page,6);assert.equal(last.records.length,10);
   assert.equal(usageHistory([],params({})).pages,1);
-  for(const p of [{page:0},{page:'NaN'},{size:101},{size:0},{page:1.2}])assert.throws(()=>usageHistory(events,params(p)),/无效/);
+  for(const p of [{page:0},{page:'NaN'},{size:101},{size:0},{size:4},{page:1.2}])assert.throws(()=>usageHistory(events,params(p)),/无效/);
 });
 test('产品、模型与起止时间组合筛选，原始记录不被修改',()=>{
   const r=usageHistory(events,params({source:'code',q:'k3.1',from:1010,to:1040}));

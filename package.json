@@ -1,0 +1,20 @@
+{
+  "name": "kimi-usage-monitor",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/build-ui.cjs",
+    "test": "node --test tests/*.test.cjs",
+    "start": "node monitor.cjs --serve"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

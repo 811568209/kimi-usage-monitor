@@ -1,0 +1,7 @@
+import {Panel,Export} from '../components';
+import {date,fmt} from '../api';
+export default function DataStatus({report:r,onStop}){
+  return <><Panel title="SQLite 数据与导出"><p id="storageStatus">SQLite 已保存 · {r.sqlite?.path} · {fmt(r.sqlite?.usage_events)} 条调用 · {fmt(r.sqlite?.conversation_messages)} 条会话消息 · {fmt(r.sqlite?.collection_runs)} 次采集快照 · 最近写入 {date(r.sqlite?.lastWrittenAt)}。</p><p className="small">正文仅保存在本机数据库，SQLite 快照也包含已采集的用户/助手可见正文；普通 CSV 不含正文。后台使用在线备份接口，下载时可以继续采集。</p><div className="actions"><Export name="usage.sqlite">下载 SQLite 分析快照</Export><Export name="tokens.csv">全部调用</Export><Export name="quota.csv">额度读数</Export><Export name="capacity.csv">额度推算</Export><Export name="models.csv">模型推算</Export><Export name="activity.csv">每日用量</Export><Export name="samples.csv">隔离样本</Export></div></Panel>
+    <Panel title="数据来源与统计边界">{r.limitations.map((x,i)=><p className="small" key={i}>· {x}</p>)}<p className="small">读取两款客户端的 wire.jsonl 与会员日志；不会安装证书、代理或修改客户端。缓存未知和总量未知保留为 NULL，推算中的补估单独标明。系统提示、隐藏思考、工具输出和客户端登录凭据不写入会话正文。</p></Panel>
+    <Panel title="运行状态"><p>日志采集：每 {r.settings.updateIntervalSeconds} 秒；额度查询：每 {r.settings.quotaPollSeconds} 秒。个人数据不会纳入 Git。</p><details><summary>查看采集诊断</summary><pre id="status" className="diagnostics">{JSON.stringify(r.status,null,2)}</pre></details><p className="small">关闭网页后后台继续记录；点击停止监控后，重新双击启动文件可恢复。</p><button className="danger" id="stop" onClick={onStop}>停止监控</button></Panel></>;
+}
